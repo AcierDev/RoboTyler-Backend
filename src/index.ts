@@ -143,22 +143,22 @@ class PaintSystemController {
 
     // Send initial offsets for each side
     await this.sendSerialCommand(
-      `SET_FRONT_OFFSET ${patternConfig.initialOffsets.front.x.toFixed(
+      `SET_OFFSET FRONT ${patternConfig.initialOffsets.front.x.toFixed(
         2
       )} ${patternConfig.initialOffsets.front.y.toFixed(2)}`
     );
     await this.sendSerialCommand(
-      `SET_RIGHT_OFFSET ${patternConfig.initialOffsets.right.x.toFixed(
+      `SET_OFFSET RIGHT ${patternConfig.initialOffsets.right.x.toFixed(
         2
       )} ${patternConfig.initialOffsets.right.y.toFixed(2)}`
     );
     await this.sendSerialCommand(
-      `SET_BACK_OFFSET ${patternConfig.initialOffsets.back.x.toFixed(
+      `SET_OFFSET BACK ${patternConfig.initialOffsets.back.x.toFixed(
         2
       )} ${patternConfig.initialOffsets.back.y.toFixed(2)}`
     );
     await this.sendSerialCommand(
-      `SET_LEFT_OFFSET ${patternConfig.initialOffsets.left.x.toFixed(
+      `SET_OFFSET LEFT ${patternConfig.initialOffsets.left.x.toFixed(
         2
       )} ${patternConfig.initialOffsets.left.y.toFixed(2)}`
     );
@@ -868,6 +868,8 @@ class PaintSystemController {
             // If pattern settings were updated, send them to the ESP32
             if (command.payload.pattern) {
               const patternConfig = settings.getPatternSettings();
+
+              // Send horizontal and vertical travel distances
               await this.sendSerialCommand(
                 `SET_HORIZONTAL_TRAVEL ${patternConfig.travelDistance.horizontal.x.toFixed(
                   2
@@ -880,6 +882,28 @@ class PaintSystemController {
               );
               await this.sendSerialCommand(
                 `SET_GRID ${patternConfig.rows.x} ${patternConfig.rows.y}`
+              );
+
+              // Update offset commands to match ESP32 format: SET_OFFSET <side> <x> <y>
+              await this.sendSerialCommand(
+                `SET_OFFSET FRONT ${patternConfig.initialOffsets.front.x.toFixed(
+                  2
+                )} ${patternConfig.initialOffsets.front.y.toFixed(2)}`
+              );
+              await this.sendSerialCommand(
+                `SET_OFFSET RIGHT ${patternConfig.initialOffsets.right.x.toFixed(
+                  2
+                )} ${patternConfig.initialOffsets.right.y.toFixed(2)}`
+              );
+              await this.sendSerialCommand(
+                `SET_OFFSET BACK ${patternConfig.initialOffsets.back.x.toFixed(
+                  2
+                )} ${patternConfig.initialOffsets.back.y.toFixed(2)}`
+              );
+              await this.sendSerialCommand(
+                `SET_OFFSET LEFT ${patternConfig.initialOffsets.left.x.toFixed(
+                  2
+                )} ${patternConfig.initialOffsets.left.y.toFixed(2)}`
               );
             }
           }
