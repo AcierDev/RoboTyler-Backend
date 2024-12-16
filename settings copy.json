@@ -1,0 +1,52 @@
+{
+  "speeds": {
+    "front": 100,
+    "right": 100,
+    "back": 100,
+    "left": 100
+  },
+  "maintenance": {
+    "lastMaintenanceDate": "2024-12-04",
+    "maintenanceInterval": 30,
+    "primeTime": 23,
+    "cleanTime": 1
+  },
+  "serial": {
+    "baudRate": 115200,
+    "vendorIds": ["2341", "1a86"]
+  },
+  "pattern": {
+    "travelDistance": {
+      "horizontal": {
+        "x": 26.49,
+        "y": 4.16
+      },
+      "vertical": {
+        "x": 33.28,
+        "y": 4.415
+      }
+    },
+    "rows": {
+      "x": 6,
+      "y": 8
+    },
+    "initialOffsets": {
+      "front": {
+        "x": 4.25,
+        "y": 2.25
+      },
+      "right": {
+        "x": 1.5,
+        "y": 28.74
+      },
+      "back": {
+        "x": 4.25,
+        "y": 31.37
+      },
+      "left": {
+        "x": 1.5,
+        "y": 6.25
+      }
+    }
+  }
+}

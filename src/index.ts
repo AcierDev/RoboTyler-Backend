@@ -122,21 +122,45 @@ class PaintSystemController {
     // Initialize pattern configuration
     const patternConfig = settings.getPatternSettings();
 
-    // Send pattern configuration to the ESP32
+    // Send horizontal travel distance
     await this.sendSerialCommand(
-      `SET_OFFSET_X ${patternConfig.offsets.x.toFixed(2)}`
+      `SET_HORIZONTAL_TRAVEL ${patternConfig.travelDistance.horizontal.x.toFixed(
+        2
+      )} ${patternConfig.travelDistance.horizontal.y.toFixed(2)}`
     );
+
+    // Send vertical travel distance
     await this.sendSerialCommand(
-      `SET_OFFSET_Y ${patternConfig.offsets.y.toFixed(2)}`
+      `SET_VERTICAL_TRAVEL ${patternConfig.travelDistance.vertical.x.toFixed(
+        2
+      )} ${patternConfig.travelDistance.vertical.y.toFixed(2)}`
     );
-    await this.sendSerialCommand(
-      `SET_TRAVEL_X ${patternConfig.travelDistance.x.toFixed(2)}`
-    );
-    await this.sendSerialCommand(
-      `SET_TRAVEL_Y ${patternConfig.travelDistance.y.toFixed(2)}`
-    );
+
+    // Send grid configuration
     await this.sendSerialCommand(
       `SET_GRID ${patternConfig.rows.x} ${patternConfig.rows.y}`
+    );
+
+    // Send initial offsets for each side
+    await this.sendSerialCommand(
+      `SET_FRONT_OFFSET ${patternConfig.initialOffsets.front.x.toFixed(
+        2
+      )} ${patternConfig.initialOffsets.front.y.toFixed(2)}`
+    );
+    await this.sendSerialCommand(
+      `SET_RIGHT_OFFSET ${patternConfig.initialOffsets.right.x.toFixed(
+        2
+      )} ${patternConfig.initialOffsets.right.y.toFixed(2)}`
+    );
+    await this.sendSerialCommand(
+      `SET_BACK_OFFSET ${patternConfig.initialOffsets.back.x.toFixed(
+        2
+      )} ${patternConfig.initialOffsets.back.y.toFixed(2)}`
+    );
+    await this.sendSerialCommand(
+      `SET_LEFT_OFFSET ${patternConfig.initialOffsets.left.x.toFixed(
+        2
+      )} ${patternConfig.initialOffsets.left.y.toFixed(2)}`
     );
   }
 
@@ -758,16 +782,14 @@ class PaintSystemController {
 
             // Send commands to ESP32
             await this.sendSerialCommand(
-              `SET_OFFSET_X ${patternConfig.offsets.x.toFixed(2)}`
+              `SET_HORIZONTAL_TRAVEL ${patternConfig.travelDistance.horizontal.x.toFixed(
+                2
+              )} ${patternConfig.travelDistance.horizontal.y.toFixed(2)}`
             );
             await this.sendSerialCommand(
-              `SET_OFFSET_Y ${patternConfig.offsets.y.toFixed(2)}`
-            );
-            await this.sendSerialCommand(
-              `SET_TRAVEL_X ${patternConfig.travelDistance.x.toFixed(2)}`
-            );
-            await this.sendSerialCommand(
-              `SET_TRAVEL_Y ${patternConfig.travelDistance.y.toFixed(2)}`
+              `SET_VERTICAL_TRAVEL ${patternConfig.travelDistance.vertical.x.toFixed(
+                2
+              )} ${patternConfig.travelDistance.vertical.y.toFixed(2)}`
             );
             await this.sendSerialCommand(
               `SET_GRID ${patternConfig.rows.x} ${patternConfig.rows.y}`
@@ -810,7 +832,7 @@ class PaintSystemController {
 
             // Update the settings based on the payload
             if (command.payload.pattern) {
-              console.log(command.payload.pattern);
+              console.log(JSON.stringify(command.payload.pattern));
               await settings.updatePatternSettings(command.payload.pattern);
             }
             if (command.payload.maintenance) {
@@ -847,16 +869,14 @@ class PaintSystemController {
             if (command.payload.pattern) {
               const patternConfig = settings.getPatternSettings();
               await this.sendSerialCommand(
-                `SET_OFFSET_X ${patternConfig.offsets.x.toFixed(2)}`
+                `SET_HORIZONTAL_TRAVEL ${patternConfig.travelDistance.horizontal.x.toFixed(
+                  2
+                )} ${patternConfig.travelDistance.horizontal.y.toFixed(2)}`
               );
               await this.sendSerialCommand(
-                `SET_OFFSET_Y ${patternConfig.offsets.y.toFixed(2)}`
-              );
-              await this.sendSerialCommand(
-                `SET_TRAVEL_X ${patternConfig.travelDistance.x.toFixed(2)}`
-              );
-              await this.sendSerialCommand(
-                `SET_TRAVEL_Y ${patternConfig.travelDistance.y.toFixed(2)}`
+                `SET_VERTICAL_TRAVEL ${patternConfig.travelDistance.vertical.x.toFixed(
+                  2
+                )} ${patternConfig.travelDistance.vertical.y.toFixed(2)}`
               );
               await this.sendSerialCommand(
                 `SET_GRID ${patternConfig.rows.x} ${patternConfig.rows.y}`

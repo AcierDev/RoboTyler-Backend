@@ -20,22 +20,30 @@ export interface SystemSettings {
   };
   maintenance: {
     lastMaintenanceDate: string;
-    maintenanceInterval: number; // in days
-    primeTime: number; // in seconds
-    cleanTime: number; // in seconds
+    maintenanceInterval: number;
+    primeTime: number;
+    cleanTime: number;
   };
   serial: {
     baudRate: number;
     vendorIds: string[];
   };
   pattern: {
-    offsets: {
-      x: number;
-      y: number;
+    initialOffsets: {
+      front: { x: number; y: number };
+      right: { x: number; y: number };
+      back: { x: number; y: number };
+      left: { x: number; y: number };
     };
     travelDistance: {
-      x: number;
-      y: number;
+      horizontal: {
+        x: number;
+        y: number;
+      };
+      vertical: {
+        x: number;
+        y: number;
+      };
     };
     rows: {
       x: number;

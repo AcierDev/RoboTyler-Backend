@@ -13,8 +13,8 @@ const DEFAULT_SETTINGS: SystemSettings = {
   maintenance: {
     lastMaintenanceDate: new Date().toISOString().split("T")[0],
     maintenanceInterval: 30,
-    primeTime: 5, // 5 seconds default
-    cleanTime: 10, // 10 seconds default
+    primeTime: 5,
+    cleanTime: 10,
   },
   serial: {
     baudRate: 115200,
@@ -24,17 +24,19 @@ const DEFAULT_SETTINGS: SystemSettings = {
     ],
   },
   pattern: {
-    offsets: {
-      x: 4.25,
-      y: 2.25,
+    initialOffsets: {
+      front: { x: 0, y: 0 },
+      right: { x: 0, y: 0 },
+      back: { x: 0, y: 0 },
+      left: { x: 0, y: 0 },
     },
     travelDistance: {
-      x: 26.49,
-      y: 4.16,
+      horizontal: { x: 10, y: 0 },
+      vertical: { x: 10, y: 2 },
     },
     rows: {
       x: 6,
-      y: 9,
+      y: 8,
     },
   },
 };
