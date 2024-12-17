@@ -5,6 +5,7 @@ import { WebSocket, WebSocketServer } from "ws";
 import chalk from "chalk";
 import { CommandExecutor } from "./CommandExecutor.js";
 import { SettingsManager } from "./SettingsManager.js";
+import { SystemStatus, WebSocketCommand } from "./types.js";
 
 type PatternEventType =
   | "PATTERN_START"
@@ -29,29 +30,14 @@ interface PatternStatus {
   pattern: string;
   single_side: boolean;
   details?: string;
-  completed_rows: [];
+  completed_rows: number[];
   duration: number;
   axis?: "X" | "Y";
 }
 
 // Update the SystemState interface
 interface SystemState {
-  status:
-    | "IDLE"
-    | "HOMING_X"
-    | "HOMING_Y"
-    | "HOMING_ROTATION"
-    | "HOMED"
-    | "DEPRESSURIZE_POT"
-    | "STOPPED"
-    | "PAUSED"
-    | "EXECUTING_PATTERN"
-    | "ERROR"
-    | "CYCLE_COMPLETE"
-    | "CLEANING"
-    | "PAINTING_SIDE"
-    | "MANUAL_ROTATING"
-    | "UNKNOWN";
+  status: SystemStatus;
   position: {
     x: number;
     y: number;
@@ -71,6 +57,12 @@ interface SerialConfig {
   baudRate: number;
 }
 
+// Move these to a constants file
+const WEBSOCKET_PORT = 8080;
+const RECONNECT_MAX_ATTEMPTS = 5;
+const RECONNECT_BASE_DELAY = 1000;
+const RECONNECT_MAX_DELAY = 30000;
+
 class PaintSystemController {
   private port: SerialPort | null = null;
   private parser: ReadlineParser | null = null;
@@ -80,9 +72,10 @@ class PaintSystemController {
   private reconnectAttempts: number = 0;
   private readonly MAX_RECONNECT_ATTEMPTS = 5;
   private reconnectTimer: NodeJS.Timeout | null = null;
+  private uptimeTimer: NodeJS.Timeout | null = null;
 
   private status: SystemState = {
-    status: "IDLE",
+    status: SystemStatus.IDLE,
     position: { x: 0, y: 0 },
     systemInfo: {
       temperature: 24,
@@ -121,6 +114,14 @@ class PaintSystemController {
 
     // Initialize pattern configuration
     const patternConfig = settings.getPatternSettings();
+
+    // Send maintenance settings
+    const maintenanceSettings = settings.getMaintenanceSettings();
+    await this.sendSerialCommand(`PRIME_TIME ${maintenanceSettings.primeTime}`);
+    await this.sendSerialCommand(`CLEAN_TIME ${maintenanceSettings.cleanTime}`);
+    await this.sendSerialCommand(
+      `BACK_WASH_TIME ${maintenanceSettings.backWashTime}`
+    );
 
     // Send horizontal travel distance
     await this.sendSerialCommand(
@@ -203,7 +204,7 @@ class PaintSystemController {
   }
 
   private initializeWebSocket(): void {
-    this.wss = new WebSocketServer({ port: 8080 });
+    this.wss = new WebSocketServer({ port: WEBSOCKET_PORT });
 
     this.wss.on("connection", (ws: WebSocket) => {
       console.log(chalk.green("🔌 New client connected"));
@@ -246,7 +247,7 @@ class PaintSystemController {
 
     this.port.on("error", (error) => {
       console.error(chalk.red("🔌 Serial port error:"), error);
-      this.updateStatus({ status: "ERROR" });
+      this.updateStatus({ status: SystemStatus.ERROR });
       this.broadcastToAll({
         type: "WARNING",
         payload: {
@@ -261,7 +262,7 @@ class PaintSystemController {
       const disconnectMessage = "USB connection closed";
       console.log(chalk.yellow("🔌 USB Disconnected:"), disconnectMessage);
 
-      this.updateStatus({ status: "ERROR" });
+      this.updateStatus({ status: SystemStatus.ERROR });
       this.broadcastToAll({
         type: "WARNING",
         payload: {
@@ -403,7 +404,7 @@ class PaintSystemController {
       switch (state) {
         case "HOMED":
           this.updateStatus({
-            status: "HOMED",
+            status: SystemStatus.HOMED,
             patternProgress: {
               command: 0,
               total_commands: 0,
@@ -433,7 +434,7 @@ class PaintSystemController {
           this.updateStatus({ status: state as SystemState["status"] });
           break;
         default:
-          this.updateStatus({ status: "UNKNOWN" });
+          this.updateStatus({ status: SystemStatus.UNKNOWN });
       }
       return;
     }
@@ -447,7 +448,7 @@ class PaintSystemController {
       switch (eventType) {
         case "PATTERN_START":
           this.updateStatus({
-            status: "EXECUTING_PATTERN",
+            status: SystemStatus.EXECUTING_PATTERN,
             patternProgress: {
               ...this.status.patternProgress,
               command: status.command,
@@ -461,7 +462,9 @@ class PaintSystemController {
 
         case "PATTERN_COMPLETE":
           this.updateStatus({
-            status: status.single_side ? "IDLE" : "HOMED",
+            status: status.single_side
+              ? SystemStatus.IDLE
+              : SystemStatus.HOMED,
             patternProgress: {
               ...this.status.patternProgress,
               command: 0,
@@ -471,23 +474,18 @@ class PaintSystemController {
           break;
 
         case "SPRAY_COMPLETE":
-          const updatedCompletedRows = [
-            ...this.status.patternProgress.completed_rows,
-          ];
-          //@ts-ignore
-
-          if (!updatedCompletedRows.includes(status.row - 1)) {
-            //@ts-ignore
-
-            updatedCompletedRows.push(status.row - 1);
+          if (status.row !== undefined) {
+            const updatedCompletedRows = [...this.status.patternProgress.completed_rows];
+            if (!updatedCompletedRows.includes(status.row - 1)) {
+              updatedCompletedRows.push(status.row - 1);
+            }
+            this.updateStatus({
+              patternProgress: {
+                ...this.status.patternProgress,
+                completed_rows: updatedCompletedRows,
+              },
+            });
           }
-          this.updateStatus({
-            patternProgress: {
-              ...this.status.patternProgress,
-              //@ts-ignore
-              completed_rows: updatedCompletedRows,
-            },
-          });
           break;
 
         case "SPRAY_START":
@@ -531,7 +529,7 @@ class PaintSystemController {
 
         case "ERROR":
           this.updateStatus({
-            status: "ERROR",
+            status: SystemStatus.ERROR,
           });
           this.broadcastToAll({
             type: "WARNING",
@@ -595,9 +593,14 @@ class PaintSystemController {
 
   // Update the handleWebSocketCommand method in PaintSystemController class
   private async handleWebSocketCommand(
-    command: any,
+    command: WebSocketCommand,
     ws: WebSocket
   ): Promise<void> {
+    if (!command || !command.type) {
+      this.sendErrorToClient(ws, "Invalid command format");
+      return;
+    }
+
     console.log(chalk.blue("📥 Received command:"), command);
 
     try {
@@ -627,14 +630,13 @@ class PaintSystemController {
 
         // Maintenance commands
         case "PRIME_GUN":
-          const primeSettings =
-            SettingsManager.getInstance().getMaintenanceSettings();
           await this.sendSerialCommand(`PRIME`);
           break;
         case "CLEAN_GUN":
-          const cleanSettings =
-            SettingsManager.getInstance().getMaintenanceSettings();
           await this.sendSerialCommand(`CLEAN`);
+          break;
+        case "BACK_WASH":
+          await this.sendSerialCommand("BACK_WASH");
           break;
         case "TOGGLE_PRESSURE_POT":
           await this.sendSerialCommand("PRESSURE");
@@ -654,6 +656,10 @@ class PaintSystemController {
           await this.sendSerialCommand("LEFT");
           break;
         case "ROTATE_SPINNER":
+          if (!command.payload?.direction || !command.payload?.degrees) {
+            this.sendErrorToClient(ws, "Missing direction or degrees for rotation");
+            break;
+          }
           await this.sendSerialCommand(
             `ROTATE ${command.payload.direction == "right" ? "" : "-"}${
               command.payload.degrees
@@ -839,6 +845,18 @@ class PaintSystemController {
               await settings.updateMaintenanceSettings(
                 command.payload.maintenance
               );
+
+              // Send updated maintenance settings to ESP32
+              const maintenanceSettings = settings.getMaintenanceSettings();
+              await this.sendSerialCommand(
+                `PRIME_TIME ${maintenanceSettings.primeTime}`
+              );
+              await this.sendSerialCommand(
+                `CLEAN_TIME ${maintenanceSettings.cleanTime}`
+              );
+              await this.sendSerialCommand(
+                `BACK_WASH_TIME ${maintenanceSettings.backWashTime}`
+              );
             }
             if (command.payload.speeds) {
               await settings.updateSpeeds(command.payload.speeds);
@@ -927,7 +945,7 @@ class PaintSystemController {
         (error.message.includes("Serial port not connected") ||
           error.message.includes("Failed to send command"))
       ) {
-        this.updateStatus({ status: "ERROR" });
+        this.updateStatus({ status: SystemStatus.ERROR });
       }
     }
   }
@@ -1010,14 +1028,17 @@ class PaintSystemController {
       ws.send(
         JSON.stringify({
           type: "ERROR",
-          payload: error,
+          payload: {
+            message: error,
+            timestamp: new Date().toISOString(),
+          },
         })
       );
     }
   }
 
   private startUptimeTimer(): void {
-    setInterval(() => {
+    this.uptimeTimer = setInterval(() => {
       const now = new Date();
       const diff = now.getTime() - this.uptimeStart.getTime();
 
@@ -1053,6 +1074,10 @@ class PaintSystemController {
   }
 
   async disconnect(): Promise<void> {
+    if (this.uptimeTimer) {
+      clearInterval(this.uptimeTimer);
+      this.uptimeTimer = null;
+    }
     await this.sendSerialCommand("STOP");
 
     // Close all WebSocket connections

@@ -15,6 +15,7 @@ const DEFAULT_SETTINGS: SystemSettings = {
     maintenanceInterval: 30,
     primeTime: 5,
     cleanTime: 10,
+    backWashTime: 15,
   },
   serial: {
     baudRate: 115200,

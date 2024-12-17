@@ -11,6 +11,11 @@ interface USBDevice {
   pnpId?: string;
 }
 
+interface SerialConfig {
+  path: string;
+  baudRate: number;
+}
+
 export class CommandExecutor {
   static async findUSBDevice(): Promise<string> {
     const settings = SettingsManager.getInstance();
@@ -18,13 +23,18 @@ export class CommandExecutor {
 
     try {
       console.log(chalk.blue("🔍 Scanning for USB devices..."));
+      console.log(chalk.gray("Looking for vendor IDs:"), vendorIds);
+
       const ports = await SerialPort.list();
 
       // Enhanced debugging output
       console.log(chalk.gray("Found devices:"));
       ports.forEach((port) => {
-        const vendorStatus = port.vendorId
-          ? vendorIds.includes(port.vendorId.toLowerCase())
+        const vendorId = port.vendorId?.toLowerCase();
+        const isCompatible = vendorId && vendorIds.includes(vendorId);
+
+        const vendorStatus = vendorId
+          ? isCompatible
             ? chalk.green("✓ Compatible")
             : chalk.yellow("✗ Incompatible")
           : chalk.red("No vendor ID");
@@ -44,44 +54,56 @@ export class CommandExecutor {
       // Filter for devices with matching vendor IDs
       const compatibleDevices = ports.filter(
         (port) =>
-          port.vendorId && vendorIds.includes(port.vendorId.toLowerCase())
+          port.vendorId?.toLowerCase() &&
+          vendorIds.includes(port.vendorId.toLowerCase())
       );
 
-      if (compatibleDevices.length === 0) {
+      if (compatibleDevices.length > 0) {
+        const selectedDevice = compatibleDevices[0];
         console.log(
-          chalk.yellow("\nSupported vendor IDs:"),
-          vendorIds.join(", ")
-        );
-        throw new Error(
-          "No compatible USB devices found. Please check the connection."
-        );
-      }
-
-      if (compatibleDevices.length > 1) {
-        console.log(
-          chalk.yellow(
-            "⚠️  Multiple compatible devices found. Using first device."
+          chalk.green("\n✓ Selected device:"),
+          chalk.bold(selectedDevice.path),
+          chalk.gray(
+            `(VID: ${selectedDevice.vendorId}, PID: ${selectedDevice.productId})`
           )
         );
+        return selectedDevice.path;
       }
 
-      const selectedDevice = compatibleDevices[0];
+      // Only try common paths if no compatible devices found
       console.log(
-        chalk.green("\n✓ Selected device:"),
-        chalk.bold(selectedDevice.path),
-        chalk.gray(
-          `(VID: ${selectedDevice.vendorId}, PID: ${selectedDevice.productId})`
-        )
+        chalk.yellow("\nNo devices found by vendor ID, trying common paths...")
       );
+      const commonPaths = [
+        "/dev/ttyUSB0",
+        "/dev/ttyUSB1",
+        "/dev/ttyACM0",
+        "/dev/ttyACM1",
+        "/dev/tty.usbserial-210",
+      ];
 
-      return selectedDevice.path;
+      for (const path of commonPaths) {
+        try {
+          const testPort = new SerialPort({ path, baudRate: 115200 });
+          await new Promise((resolve) => testPort.close(resolve));
+          console.log(chalk.green(`Found device at ${path}`));
+          return path;
+        } catch (e) {
+          // Path not available, continue to next
+          continue;
+        }
+      }
+
+      throw new Error(
+        "No compatible USB devices found. Please check the connection."
+      );
     } catch (error) {
       console.error(chalk.red("❌ Error scanning USB devices:"), error);
       throw error;
     }
   }
 
-  static async getSerialConfig(): Promise<{ path: string; baudRate: number }> {
+  static async getSerialConfig(): Promise<SerialConfig> {
     const settings = SettingsManager.getInstance();
     const { baudRate } = settings.getSerialConfig();
     const path = await this.findUSBDevice();
