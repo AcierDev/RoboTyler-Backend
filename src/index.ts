@@ -50,6 +50,16 @@ interface SystemState {
   patternProgress: PatternStatus;
   lastSerialMessage: string;
   pressurePotActive: boolean;
+  limitSwitches: {
+    x: {
+      min: boolean;
+      max: boolean;
+    };
+    y: {
+      min: boolean;
+      max: boolean;
+    };
+  };
 }
 
 interface SerialConfig {
@@ -94,6 +104,10 @@ class PaintSystemController {
       duration: 0,
     },
     pressurePotActive: false,
+    limitSwitches: {
+      x: { min: false, max: false },
+      y: { min: false, max: false }
+    },
   };
 
   constructor(private config: SerialConfig) {}
@@ -610,6 +624,39 @@ class PaintSystemController {
           severity: "low",
         },
       });
+    }
+
+    // Handle limit switch messages
+    const limitMatch = line.match(/LIMIT:([XY])_(MIN|MAX)/);
+    if (limitMatch) {
+      const [, axis, direction] = limitMatch;
+      const newLimitSwitches = { ...this.status.limitSwitches };
+      
+      // Reset all limits for the affected axis
+      if (axis === 'X') {
+        newLimitSwitches.x = { min: false, max: false };
+      } else {
+        newLimitSwitches.y = { min: false, max: false };
+      }
+      
+      // Set the triggered limit
+      if (axis === 'X') {
+        newLimitSwitches.x[direction.toLowerCase() as 'min' | 'max'] = true;
+      } else {
+        newLimitSwitches.y[direction.toLowerCase() as 'min' | 'max'] = true;
+      }
+
+      // Update state and broadcast
+      this.updateStatus({ limitSwitches: newLimitSwitches });
+      
+      // Log the limit switch event
+      console.log(
+        chalk.gray("└─"),
+        chalk.yellow("Limit Switch:"),
+        chalk.bold(`${axis}-axis ${direction.toLowerCase()} limit reached`)
+      );
+
+      return;
     }
   }
 
