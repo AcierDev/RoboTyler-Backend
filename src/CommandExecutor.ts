@@ -19,7 +19,7 @@ interface SerialConfig {
 export class CommandExecutor {
   static async findUSBDevice(): Promise<string> {
     const settings = SettingsManager.getInstance();
-    const { vendorIds } = settings.getSerialConfig();
+    const { vendorIds, commonPaths } = settings.getSerialConfig();
 
     try {
       console.log(chalk.blue("🔍 Scanning for USB devices..."));
@@ -70,27 +70,30 @@ export class CommandExecutor {
         return selectedDevice.path;
       }
 
-      // Only try common paths if no compatible devices found
+      // Try common paths if no compatible devices found by vendor ID
       console.log(
         chalk.yellow("\nNo devices found by vendor ID, trying common paths...")
       );
-      const commonPaths = [
-        "/dev/ttyUSB0",
-        "/dev/ttyUSB1",
-        "/dev/ttyACM0",
-        "/dev/ttyACM1",
-        "/dev/tty.usbserial-210",
-      ];
 
-      for (const path of commonPaths) {
-        try {
-          const testPort = new SerialPort({ path, baudRate: 115200 });
-          await new Promise((resolve) => testPort.close(resolve));
-          console.log(chalk.green(`Found device at ${path}`));
-          return path;
-        } catch (e) {
-          // Path not available, continue to next
-          continue;
+      for (const pathPattern of commonPaths) {
+        // Handle wildcard paths
+        if (pathPattern.includes('*')) {
+          const basePattern = pathPattern.replace('*', '');
+          const matchingPorts = ports.filter(port => port.path.startsWith(basePattern));
+          if (matchingPorts.length > 0) {
+            console.log(chalk.green(`Found device at ${matchingPorts[0].path}`));
+            return matchingPorts[0].path;
+          }
+        } else {
+          try {
+            const testPort = new SerialPort({ path: pathPattern, baudRate: 115200 });
+            await new Promise((resolve) => testPort.close(resolve));
+            console.log(chalk.green(`Found device at ${pathPattern}`));
+            return pathPattern;
+          } catch (e) {
+            // Path not available, continue to next
+            continue;
+          }
         }
       }
 

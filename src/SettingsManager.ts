@@ -23,6 +23,14 @@ const DEFAULT_SETTINGS: SystemSettings = {
       "2341", // Arduino vendor ID
       "1a86", // CH340 chip vendor ID
     ],
+    commonPaths: [
+      "/dev/ttyACM0",  // Common Arduino path on Linux
+      "/dev/ttyACM1",
+      "/dev/ttyUSB0",
+      "/dev/ttyUSB1",
+      "/dev/tty.usbserial-210",
+      "/dev/tty.usbmodem*" // For Arduino on macOS
+    ]
   },
   pattern: {
     initialOffsets: {

@@ -387,6 +387,28 @@ class PaintSystemController {
       chalk.bold(line)
     );
 
+    // Handle position updates in new format
+    const positionMatch = line.match(/Position - X: ([\d.]+) inches, Y: ([\d.]+) inches/);
+    if (positionMatch) {
+      const x = parseFloat(positionMatch[1]);
+      const y = parseFloat(positionMatch[2]);
+      
+      // Update internal state
+      this.updateStatus({ position: { x, y } });
+      
+      // Broadcast position update as separate event
+      this.broadcastToAll({
+        type: "POSITION_UPDATE",
+        payload: {
+          x,
+          y,
+          timestamp: Date.now()
+        }
+      });
+      
+      return;
+    }
+
     if (line.startsWith("Pressure pot")) {
       const isActive = !line.includes("deactivated");
       this.updateStatus({ pressurePotActive: isActive });
@@ -924,6 +946,126 @@ class PaintSystemController {
                 )} ${patternConfig.initialOffsets.left.y.toFixed(2)}`
               );
             }
+          }
+          break;
+
+        case "MANUAL_MOVE":
+          if (!command.payload?.direction || !command.payload?.state) {
+            this.sendErrorToClient(ws, "Missing direction or state for manual move");
+            break;
+          }
+
+          // Validate direction
+          const validDirections = [
+            "left", "right", "forward", "backward",
+            "forward-left", "forward-right",
+            "backward-left", "backward-right"
+          ];
+          if (!validDirections.includes(command.payload.direction)) {
+            this.sendErrorToClient(ws, "Invalid direction for manual move");
+            break;
+          }
+
+          // Handle movement start/stop
+          if (command.payload.state === "START") {
+            // Validate speed and acceleration if provided
+            const speed = command.payload.speed || 1.0;
+            const acceleration = command.payload.acceleration || 1.0;
+
+            // Convert direction to axis and sign
+            let axis = "X"; // Default value
+            let sign = "+"; // Default value
+            switch (command.payload.direction) {
+              case "left":
+                axis = "X";
+                sign = "-";
+                break;
+              case "right":
+                axis = "X";
+                sign = "+";
+                break;
+              case "forward":
+                axis = "Y";
+                sign = "+";
+                break;
+              case "backward":
+                axis = "Y";
+                sign = "-";
+                break;
+              // Add diagonal movement support
+              case "forward-right":
+                await this.sendSerialCommand(
+                  `MANUAL_MOVE_DIAGONAL X+ Y+ ${speed.toFixed(2)} ${acceleration.toFixed(2)}`
+                );
+                return;
+              case "forward-left":
+                await this.sendSerialCommand(
+                  `MANUAL_MOVE_DIAGONAL X- Y+ ${speed.toFixed(2)} ${acceleration.toFixed(2)}`
+                );
+                return;
+              case "backward-right":
+                await this.sendSerialCommand(
+                  `MANUAL_MOVE_DIAGONAL X+ Y- ${speed.toFixed(2)} ${acceleration.toFixed(2)}`
+                );
+                return;
+              case "backward-left":
+                await this.sendSerialCommand(
+                  `MANUAL_MOVE_DIAGONAL X- Y- ${speed.toFixed(2)} ${acceleration.toFixed(2)}`
+                );
+                return;
+            }
+
+            await this.sendSerialCommand(
+              `MANUAL_MOVE ${axis} ${sign} ${speed.toFixed(2)} ${acceleration.toFixed(2)}`
+            );
+          } else if (command.payload.state === "STOP") {
+            await this.sendSerialCommand("MANUAL_STOP");
+          } else {
+            this.sendErrorToClient(ws, "Invalid state for manual move");
+          }
+          break;
+
+        case "TOGGLE_SPRAY":
+          if (!command.payload?.state) {
+            this.sendErrorToClient(ws, "Missing state for spray toggle");
+            break;
+          }
+          
+          if (command.payload.state === "START") {
+            await this.sendSerialCommand("SPRAY_START");
+          } else if (command.payload.state === "STOP") {
+            await this.sendSerialCommand("SPRAY_STOP");
+          } else {
+            this.sendErrorToClient(ws, "Invalid state for spray toggle");
+          }
+          break;
+
+        case "MOVE_TO_POSITION":
+          if (!command.payload?.x || !command.payload?.y) {
+            this.sendErrorToClient(ws, "Missing x or y coordinates for position move");
+            break;
+          }
+
+          // Validate speed and acceleration
+          const moveSpeed = command.payload.speed || 1.0;
+          const moveAcceleration = command.payload.acceleration || 1.0;
+
+          // Ensure values are within reasonable ranges
+          if (moveSpeed <= 0 || moveSpeed > 1 || moveAcceleration <= 0 || moveAcceleration > 1) {
+            this.sendErrorToClient(ws, "Speed and acceleration must be between 0 and 1");
+            break;
+          }
+
+          try {
+            // Send the GOTO command with the specified coordinates
+            await this.sendSerialCommand(
+              `GOTO ${command.payload.x.toFixed(2)} ${command.payload.y.toFixed(2)}`
+            );
+          } catch (error) {
+            this.sendErrorToClient(
+              ws,
+              error instanceof Error ? error.message : "Failed to execute movement"
+            );
           }
           break;
 

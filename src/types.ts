@@ -32,6 +32,7 @@ export interface SystemSettings {
   serial: {
     baudRate: number;
     vendorIds: string[];
+    commonPaths: string[];
   };
   pattern: {
     initialOffsets: {
