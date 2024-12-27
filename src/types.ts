@@ -36,10 +36,10 @@ export interface SystemSettings {
   };
   pattern: {
     initialOffsets: {
-      front: { x: number; y: number };
-      right: { x: number; y: number };
-      back: { x: number; y: number };
-      left: { x: number; y: number };
+      front: { x: number; y: number; angle: number };
+      right: { x: number; y: number; angle: number };
+      back: { x: number; y: number; angle: number };
+      left: { x: number; y: number; angle: number };
     };
     travelDistance: {
       horizontal: {

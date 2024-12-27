@@ -158,24 +158,24 @@ class PaintSystemController {
 
     // Send initial offsets for each side
     await this.sendSerialCommand(
-      `SET_OFFSET FRONT ${patternConfig.initialOffsets.front.x.toFixed(
-        2
-      )} ${patternConfig.initialOffsets.front.y.toFixed(2)}`
+      `SET_OFFSET FRONT ${patternConfig.initialOffsets.front.x.toFixed(2)} ${
+        patternConfig.initialOffsets.front.y.toFixed(2)
+      } ${patternConfig.initialOffsets.front.angle.toFixed(2)}`
     );
     await this.sendSerialCommand(
-      `SET_OFFSET RIGHT ${patternConfig.initialOffsets.right.x.toFixed(
-        2
-      )} ${patternConfig.initialOffsets.right.y.toFixed(2)}`
+      `SET_OFFSET RIGHT ${patternConfig.initialOffsets.right.x.toFixed(2)} ${
+        patternConfig.initialOffsets.right.y.toFixed(2)
+      } ${patternConfig.initialOffsets.right.angle.toFixed(2)}`
     );
     await this.sendSerialCommand(
-      `SET_OFFSET BACK ${patternConfig.initialOffsets.back.x.toFixed(
-        2
-      )} ${patternConfig.initialOffsets.back.y.toFixed(2)}`
+      `SET_OFFSET BACK ${patternConfig.initialOffsets.back.x.toFixed(2)} ${
+        patternConfig.initialOffsets.back.y.toFixed(2)
+      } ${patternConfig.initialOffsets.back.angle.toFixed(2)}`
     );
     await this.sendSerialCommand(
-      `SET_OFFSET LEFT ${patternConfig.initialOffsets.left.x.toFixed(
-        2
-      )} ${patternConfig.initialOffsets.left.y.toFixed(2)}`
+      `SET_OFFSET LEFT ${patternConfig.initialOffsets.left.x.toFixed(2)} ${
+        patternConfig.initialOffsets.left.y.toFixed(2)
+      } ${patternConfig.initialOffsets.left.angle.toFixed(2)}`
     );
   }
 
@@ -626,20 +626,38 @@ class PaintSystemController {
       });
     }
 
+    // Handle limit clear messages
+    if (line.startsWith('LIMIT_CLEAR:')) {
+      const axis = line.split(':')[1].trim();
+      const newLimitSwitches = { ...this.status.limitSwitches };
+      
+      // Reset all limits for the specified axis
+      if (axis === 'X') {
+        newLimitSwitches.x = { min: false, max: false };
+      } else if (axis === 'Y') {
+        newLimitSwitches.y = { min: false, max: false };
+      }
+
+      // Update state and broadcast
+      this.updateStatus({ limitSwitches: newLimitSwitches });
+      
+      // Log the limit clear event
+      console.log(
+        chalk.gray("└─"),
+        chalk.green("Limit Clear:"),
+        chalk.bold(`${axis}-axis limits cleared`)
+      );
+
+      return;
+    }
+
     // Handle limit switch messages
     const limitMatch = line.match(/LIMIT:([XY])_(MIN|MAX)/);
     if (limitMatch) {
       const [, axis, direction] = limitMatch;
       const newLimitSwitches = { ...this.status.limitSwitches };
       
-      // Reset all limits for the affected axis
-      if (axis === 'X') {
-        newLimitSwitches.x = { min: false, max: false };
-      } else {
-        newLimitSwitches.y = { min: false, max: false };
-      }
-      
-      // Set the triggered limit
+      // Only update the specific limit that was triggered
       if (axis === 'X') {
         newLimitSwitches.x[direction.toLowerCase() as 'min' | 'max'] = true;
       } else {
@@ -653,7 +671,8 @@ class PaintSystemController {
       console.log(
         chalk.gray("└─"),
         chalk.yellow("Limit Switch:"),
-        chalk.bold(`${axis}-axis ${direction.toLowerCase()} limit reached`)
+        chalk.bold(`${axis}-axis ${direction.toLowerCase()} limit reached`),
+        chalk.bold(JSON.stringify(newLimitSwitches))
       );
 
       return;
@@ -971,26 +990,26 @@ class PaintSystemController {
                 `SET_GRID ${patternConfig.rows.x} ${patternConfig.rows.y}`
               );
 
-              // Update offset commands to match ESP32 format: SET_OFFSET <side> <x> <y>
+              // Update offset commands to include angle
               await this.sendSerialCommand(
-                `SET_OFFSET FRONT ${patternConfig.initialOffsets.front.x.toFixed(
-                  2
-                )} ${patternConfig.initialOffsets.front.y.toFixed(2)}`
+                `SET_OFFSET FRONT ${patternConfig.initialOffsets.front.x.toFixed(2)} ${
+                  patternConfig.initialOffsets.front.y.toFixed(2)
+                } ${patternConfig.initialOffsets.front.angle.toFixed(2)}`
               );
               await this.sendSerialCommand(
-                `SET_OFFSET RIGHT ${patternConfig.initialOffsets.right.x.toFixed(
-                  2
-                )} ${patternConfig.initialOffsets.right.y.toFixed(2)}`
+                `SET_OFFSET RIGHT ${patternConfig.initialOffsets.right.x.toFixed(2)} ${
+                  patternConfig.initialOffsets.right.y.toFixed(2)
+                } ${patternConfig.initialOffsets.right.angle.toFixed(2)}`
               );
               await this.sendSerialCommand(
-                `SET_OFFSET BACK ${patternConfig.initialOffsets.back.x.toFixed(
-                  2
-                )} ${patternConfig.initialOffsets.back.y.toFixed(2)}`
+                `SET_OFFSET BACK ${patternConfig.initialOffsets.back.x.toFixed(2)} ${
+                  patternConfig.initialOffsets.back.y.toFixed(2)
+                } ${patternConfig.initialOffsets.back.angle.toFixed(2)}`
               );
               await this.sendSerialCommand(
-                `SET_OFFSET LEFT ${patternConfig.initialOffsets.left.x.toFixed(
-                  2
-                )} ${patternConfig.initialOffsets.left.y.toFixed(2)}`
+                `SET_OFFSET LEFT ${patternConfig.initialOffsets.left.x.toFixed(2)} ${
+                  patternConfig.initialOffsets.left.y.toFixed(2)
+                } ${patternConfig.initialOffsets.left.angle.toFixed(2)}`
               );
             }
           }
@@ -1088,10 +1107,10 @@ class PaintSystemController {
           break;
 
         case "MOVE_TO_POSITION":
-          if (!command.payload?.x || !command.payload?.y) {
+          if (!command.payload?.x || command.payload?.y == undefined) {
             this.sendErrorToClient(ws, "Missing x or y coordinates for position move");
             break;
-          }
+          } 
 
           // Validate speed and acceleration
           const moveSpeed = command.payload.speed || 1.0;
@@ -1112,6 +1131,30 @@ class PaintSystemController {
             this.sendErrorToClient(
               ws,
               error instanceof Error ? error.message : "Failed to execute movement"
+            );
+          }
+          break;
+
+        case "SET_SERVO_ANGLE":
+          if (command.payload?.angle === undefined) {
+            this.sendErrorToClient(ws, "Missing angle for servo");
+            break;
+          }
+
+          // Validate angle is within 0-180 range
+          const angle = Number(command.payload.angle);
+          if (isNaN(angle) || angle < 0 || angle > 180) {
+            this.sendErrorToClient(ws, "Servo angle must be between 0 and 180 degrees");
+            break;
+          }
+
+          try {
+            // Send the SERVO command with the specified angle
+            await this.sendSerialCommand(`SERVO ${Math.round(angle)}`);
+          } catch (error) {
+            this.sendErrorToClient(
+              ws,
+              error instanceof Error ? error.message : "Failed to set servo angle"
             );
           }
           break;
