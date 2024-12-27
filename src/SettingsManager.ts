@@ -34,10 +34,10 @@ const DEFAULT_SETTINGS: SystemSettings = {
   },
   pattern: {
     initialOffsets: {
-      front: { x: 0, y: 0 },
-      right: { x: 0, y: 0 },
-      back: { x: 0, y: 0 },
-      left: { x: 0, y: 0 },
+      front: { x: 0, y: 0, angle: 0 },
+      right: { x: 0, y: 0, angle: 0 },
+      back: { x: 0, y: 0, angle: 0 },
+      left: { x: 0, y: 0, angle: 0 },
     },
     travelDistance: {
       horizontal: { x: 10, y: 0 },
