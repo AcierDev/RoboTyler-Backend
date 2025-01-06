@@ -21,6 +21,7 @@ export interface SystemSettings {
     right: number;
     back: number;
     left: number;
+    lip: number;
   };
   maintenance: {
     lastMaintenanceDate: string;
@@ -40,6 +41,7 @@ export interface SystemSettings {
       right: { x: number; y: number; angle: number };
       back: { x: number; y: number; angle: number };
       left: { x: number; y: number; angle: number };
+      lip: { x: number; y: number; angle: number };
     };
     travelDistance: {
       horizontal: {
@@ -50,10 +52,21 @@ export interface SystemSettings {
         x: number;
         y: number;
       };
+      lip: {
+        x: number;
+        y: number;
+      };
     };
     rows: {
       x: number;
       y: number;
+    };
+    enabledSides: {
+      front: boolean;
+      right: boolean;
+      back: boolean;
+      left: boolean;
+      lip: boolean;
     };
   };
 }

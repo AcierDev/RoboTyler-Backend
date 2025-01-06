@@ -1,0 +1,65 @@
+{
+  "name": "Default",
+  "description": "Pre adjustmant",
+  "timestamp": "2024-12-30T23:15:07.092Z",
+  "settings": {
+    "speeds": {
+      "front": 50,
+      "right": 28,
+      "back": 51,
+      "left": 36
+    },
+    "maintenance": {
+      "lastMaintenanceDate": "2024-12-04",
+      "maintenanceInterval": 30,
+      "primeTime": 20,
+      "cleanTime": 5,
+      "backWashTime": 15
+    },
+    "serial": {
+      "baudRate": 115200,
+      "vendorIds": [
+        "2341",
+        "1a86"
+      ]
+    },
+    "pattern": {
+      "travelDistance": {
+        "horizontal": {
+          "x": 56,
+          "y": 4.92
+        },
+        "vertical": {
+          "x": 32,
+          "y": 5
+        }
+      },
+      "rows": {
+        "x": 5,
+        "y": 7
+      },
+      "initialOffsets": {
+        "front": {
+          "x": 1,
+          "y": 0,
+          "angle": 122
+        },
+        "right": {
+          "x": 1,
+          "y": 27,
+          "angle": 125
+        },
+        "back": {
+          "x": 5,
+          "y": 32.5,
+          "angle": 137
+        },
+        "left": {
+          "x": 1.25,
+          "y": 6.5,
+          "angle": 125
+        }
+      }
+    }
+  }
+}

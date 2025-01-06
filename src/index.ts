@@ -60,6 +60,7 @@ interface SystemState {
       max: boolean;
     };
   };
+  servoAngle: number;
 }
 
 interface SerialConfig {
@@ -108,6 +109,7 @@ class PaintSystemController {
       x: { min: false, max: false },
       y: { min: false, max: false }
     },
+    servoAngle: 0,
   };
 
   constructor(private config: SerialConfig) {}
@@ -156,6 +158,12 @@ class PaintSystemController {
       `SET_GRID ${patternConfig.rows.x} ${patternConfig.rows.y}`
     );
 
+    // Send enabled sides configuration
+    const enabledSides = patternConfig.enabledSides;
+    await this.sendSerialCommand(
+      `SET_ENABLED_SIDES FRONT=${enabledSides.front ? 1 : 0} RIGHT=${enabledSides.right ? 1 : 0} BACK=${enabledSides.back ? 1 : 0} LEFT=${enabledSides.left ? 1 : 0} LIP=${enabledSides.lip ? 1 : 0}`
+    );
+
     // Send initial offsets for each side
     await this.sendSerialCommand(
       `SET_OFFSET FRONT ${patternConfig.initialOffsets.front.x.toFixed(2)} ${
@@ -176,6 +184,20 @@ class PaintSystemController {
       `SET_OFFSET LEFT ${patternConfig.initialOffsets.left.x.toFixed(2)} ${
         patternConfig.initialOffsets.left.y.toFixed(2)
       } ${patternConfig.initialOffsets.left.angle.toFixed(2)}`
+    );
+
+    // Send lip offset
+    await this.sendSerialCommand(
+      `SET_OFFSET LIP ${patternConfig.initialOffsets.lip.x.toFixed(2)} ${
+        patternConfig.initialOffsets.lip.y.toFixed(2)
+      } ${patternConfig.initialOffsets.lip.angle.toFixed(2)}`
+    );
+
+    // Send lip travel distance
+    await this.sendSerialCommand(
+      `SET_LIP_TRAVEL ${patternConfig.travelDistance.lip.x.toFixed(2)} ${
+        patternConfig.travelDistance.lip.y.toFixed(2)
+      }`
     );
   }
 
@@ -220,7 +242,7 @@ class PaintSystemController {
   private initializeWebSocket(): void {
     this.wss = new WebSocketServer({ port: WEBSOCKET_PORT });
 
-    this.wss.on("connection", (ws: WebSocket) => {
+    this.wss.on("connection", async (ws: WebSocket) => {
       console.log(chalk.green("🔌 New client connected"));
       this.clients.add(ws);
 
@@ -229,6 +251,19 @@ class PaintSystemController {
 
       // Send initial settings
       this.sendSettingsUpdate(ws);
+
+      // Send available configurations
+      try {
+        const settings = SettingsManager.getInstance();
+        const configs = await settings.listConfigs();
+        ws.send(JSON.stringify({
+          type: "CONFIGS_UPDATE",
+          payload: configs
+        }));
+      } catch (error) {
+        console.error(chalk.red("Error sending configurations:"), error);
+        this.sendErrorToClient(ws, "Failed to load configurations");
+      }
 
       ws.on("message", async (message: string) => {
         try {
@@ -292,52 +327,22 @@ class PaintSystemController {
   }
 
   private handleDisconnect(): void {
-    // Clear any existing reconnect timer
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
-    }
+    console.log(
+      chalk.yellow("🔌 USB Disconnected:"),
+      chalk.gray("Auto-reconnect is temporarily disabled")
+    );
 
-    if (this.reconnectAttempts < this.MAX_RECONNECT_ATTEMPTS) {
-      const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000); // Exponential backoff with 30s max
-      this.reconnectAttempts++;
+    this.broadcastToAll({
+      type: "WARNING",
+      payload: {
+        title: "USB Disconnected",
+        message: "USB connection lost. Please check the connection and restart the application.",
+        severity: "high",
+      },
+    });
 
-      console.log(
-        chalk.yellow("🔄 Attempting to reconnect:"),
-        chalk.bold(
-          `Attempt ${this.reconnectAttempts}/${this.MAX_RECONNECT_ATTEMPTS}`
-        ),
-        chalk.gray(`(waiting ${delay / 1000}s)`)
-      );
-
-      this.reconnectTimer = setTimeout(async () => {
-        try {
-          await this.initializeSerial();
-          console.log(chalk.green("✓ USB Reconnection successful"));
-        } catch (error) {
-          console.error(
-            chalk.red("❌ Reconnection failed:"),
-            chalk.gray(
-              `(Attempt ${this.reconnectAttempts}/${this.MAX_RECONNECT_ATTEMPTS})`
-            )
-          );
-          this.handleDisconnect(); // Try again if we haven't hit the limit
-        }
-      }, delay);
-    } else {
-      console.error(
-        chalk.red("❌ Maximum reconnection attempts reached."),
-        chalk.gray("Please check the USB connection and restart the system.")
-      );
-      this.broadcastToAll({
-        type: "WARNING",
-        payload: {
-          title: "Connection Failed",
-          message:
-            "Maximum reconnection attempts reached. Please check the USB connection and restart the system.",
-          severity: "high",
-        },
-      });
-    }
+    // Update system status to ERROR
+    this.updateStatus({ status: SystemStatus.ERROR });
   }
 
   private parseStatusMessage(
@@ -677,6 +682,33 @@ class PaintSystemController {
 
       return;
     }
+
+    // Handle servo angle updates
+    const servoMatch = line.match(/Servo - Angle: (\d+)/);
+    if (servoMatch) {
+      const angle = parseInt(servoMatch[1], 10);
+      
+      // Update internal state
+      this.updateStatus({ servoAngle: angle });
+      
+      // Log the servo angle update
+      console.log(
+        chalk.gray("└─"),
+        chalk.blue("Servo Update:"),
+        chalk.bold(`Angle: ${angle}°`)
+      );
+      
+      // Broadcast servo update as separate event
+      this.broadcastToAll({
+        type: "SERVO_UPDATE",
+        payload: {
+          angle,
+          timestamp: Date.now()
+        }
+      });
+      
+      return;
+    }
   }
 
   // Update the handleWebSocketCommand method in PaintSystemController class
@@ -694,7 +726,12 @@ class PaintSystemController {
     try {
       switch (command.type) {
         case "START_PAINTING":
-          await this.sendSerialCommand("START");
+          const enabledSides = SettingsManager.getInstance().getPatternSettings().enabledSides;
+          if (Object.values(enabledSides).some(enabled => enabled)) {
+            await this.sendSerialCommand("START");
+          } else {
+            this.sendErrorToClient(ws, "No sides are enabled for painting");
+          }
           break;
         case "STOP_PAINTING":
           await this.sendSerialCommand("STOP");
@@ -732,16 +769,39 @@ class PaintSystemController {
 
         // Single side painting commands
         case "PAINT_FRONT":
-          await this.sendSerialCommand("FRONT");
+          if (SettingsManager.getInstance().getPatternSettings().enabledSides.front) {
+            await this.sendSerialCommand("FRONT");
+          } else {
+            this.sendErrorToClient(ws, "Front side is disabled");
+          }
           break;
         case "PAINT_RIGHT":
-          await this.sendSerialCommand("RIGHT");
+          if (SettingsManager.getInstance().getPatternSettings().enabledSides.right) {
+            await this.sendSerialCommand("RIGHT");
+          } else {
+            this.sendErrorToClient(ws, "Right side is disabled");
+          }
           break;
         case "PAINT_BACK":
-          await this.sendSerialCommand("BACK");
+          if (SettingsManager.getInstance().getPatternSettings().enabledSides.back) {
+            await this.sendSerialCommand("BACK");
+          } else {
+            this.sendErrorToClient(ws, "Back side is disabled");
+          }
           break;
         case "PAINT_LEFT":
-          await this.sendSerialCommand("LEFT");
+          if (SettingsManager.getInstance().getPatternSettings().enabledSides.left) {
+            await this.sendSerialCommand("LEFT");
+          } else {
+            this.sendErrorToClient(ws, "Left side is disabled");
+          }
+          break;
+        case "PAINT_LIP":
+          if (SettingsManager.getInstance().getPatternSettings().enabledSides.lip) {
+            await this.sendSerialCommand("LIP");
+          } else {
+            this.sendErrorToClient(ws, "Lip pattern is disabled");
+          }
           break;
         case "ROTATE_SPINNER":
           if (!command.payload?.direction || !command.payload?.degrees) {
@@ -886,7 +946,45 @@ class PaintSystemController {
               )} ${patternConfig.travelDistance.vertical.y.toFixed(2)}`
             );
             await this.sendSerialCommand(
+              `SET_LIP_TRAVEL ${patternConfig.travelDistance.lip.x.toFixed(
+                2
+              )} ${patternConfig.travelDistance.lip.y.toFixed(2)}`
+            );
+            await this.sendSerialCommand(
               `SET_GRID ${patternConfig.rows.x} ${patternConfig.rows.y}`
+            );
+
+            // Send enabled sides configuration
+            const enabledSides = patternConfig.enabledSides;
+            await this.sendSerialCommand(
+              `SET_ENABLED_SIDES FRONT=${enabledSides.front ? 1 : 0} RIGHT=${enabledSides.right ? 1 : 0} BACK=${enabledSides.back ? 1 : 0} LEFT=${enabledSides.left ? 1 : 0} LIP=${enabledSides.lip ? 1 : 0}`
+            );
+
+            // Update offset commands to include angle
+            await this.sendSerialCommand(
+              `SET_OFFSET FRONT ${patternConfig.initialOffsets.front.x.toFixed(2)} ${
+                patternConfig.initialOffsets.front.y.toFixed(2)
+              } ${patternConfig.initialOffsets.front.angle.toFixed(2)}`
+            );
+            await this.sendSerialCommand(
+              `SET_OFFSET RIGHT ${patternConfig.initialOffsets.right.x.toFixed(2)} ${
+                patternConfig.initialOffsets.right.y.toFixed(2)
+              } ${patternConfig.initialOffsets.right.angle.toFixed(2)}`
+            );
+            await this.sendSerialCommand(
+              `SET_OFFSET BACK ${patternConfig.initialOffsets.back.x.toFixed(2)} ${
+                patternConfig.initialOffsets.back.y.toFixed(2)
+              } ${patternConfig.initialOffsets.back.angle.toFixed(2)}`
+            );
+            await this.sendSerialCommand(
+              `SET_OFFSET LEFT ${patternConfig.initialOffsets.left.x.toFixed(2)} ${
+                patternConfig.initialOffsets.left.y.toFixed(2)
+              } ${patternConfig.initialOffsets.left.angle.toFixed(2)}`
+            );
+            await this.sendSerialCommand(
+              `SET_OFFSET LIP ${patternConfig.initialOffsets.lip.x.toFixed(2)} ${
+                patternConfig.initialOffsets.lip.y.toFixed(2)
+              } ${patternConfig.initialOffsets.lip.angle.toFixed(2)}`
             );
           }
           break;
@@ -987,7 +1085,18 @@ class PaintSystemController {
                 )} ${patternConfig.travelDistance.vertical.y.toFixed(2)}`
               );
               await this.sendSerialCommand(
+                `SET_LIP_TRAVEL ${patternConfig.travelDistance.lip.x.toFixed(
+                  2
+                )} ${patternConfig.travelDistance.lip.y.toFixed(2)}`
+              );
+              await this.sendSerialCommand(
                 `SET_GRID ${patternConfig.rows.x} ${patternConfig.rows.y}`
+              );
+
+              // Send enabled sides configuration
+              const enabledSides = patternConfig.enabledSides;
+              await this.sendSerialCommand(
+                `SET_ENABLED_SIDES FRONT=${enabledSides.front ? 1 : 0} RIGHT=${enabledSides.right ? 1 : 0} BACK=${enabledSides.back ? 1 : 0} LEFT=${enabledSides.left ? 1 : 0} LIP=${enabledSides.lip ? 1 : 0}`
               );
 
               // Update offset commands to include angle
@@ -1010,6 +1119,11 @@ class PaintSystemController {
                 `SET_OFFSET LEFT ${patternConfig.initialOffsets.left.x.toFixed(2)} ${
                   patternConfig.initialOffsets.left.y.toFixed(2)
                 } ${patternConfig.initialOffsets.left.angle.toFixed(2)}`
+              );
+              await this.sendSerialCommand(
+                `SET_OFFSET LIP ${patternConfig.initialOffsets.lip.x.toFixed(2)} ${
+                  patternConfig.initialOffsets.lip.y.toFixed(2)
+                } ${patternConfig.initialOffsets.lip.angle.toFixed(2)}`
               );
             }
           }
@@ -1155,6 +1269,144 @@ class PaintSystemController {
             this.sendErrorToClient(
               ws,
               error instanceof Error ? error.message : "Failed to set servo angle"
+            );
+          }
+          break;
+
+        case "SAVE_CONFIG":
+          if (!command.payload?.name) {
+            this.sendErrorToClient(ws, "Missing configuration name");
+            break;
+          }
+          try {
+            const settings = SettingsManager.getInstance();
+            await settings.saveConfig(
+              command.payload.name,
+              command.payload.description
+            );
+            
+            // Send updated config list to all clients
+            const configs = await settings.listConfigs();
+            this.broadcastToAll({
+              type: "CONFIGS_UPDATE",
+              payload: configs
+            });
+          } catch (error) {
+            this.sendErrorToClient(
+              ws,
+              error instanceof Error ? error.message : "Failed to save configuration"
+            );
+          }
+          break;
+
+        case "LOAD_CONFIG":
+          if (!command.payload?.name) {
+            this.sendErrorToClient(ws, "Missing configuration name");
+            break;
+          }
+          try {
+            const settings = SettingsManager.getInstance();
+            await settings.loadConfig(command.payload.name);
+            
+            // Get the loaded settings
+            const patternConfig = settings.getPatternSettings();
+            const maintenanceSettings = settings.getMaintenanceSettings();
+            const speeds = settings.getSpeeds();
+
+            // Send all settings to ESP32
+            // 1. Send speeds for each side
+            for (const [side, value] of Object.entries(speeds)) {
+              await this.sendSerialCommand(`SPEED ${side.toUpperCase()} ${value}`);
+            }
+
+            // 2. Send maintenance settings
+            await this.sendSerialCommand(`PRIME_TIME ${maintenanceSettings.primeTime}`);
+            await this.sendSerialCommand(`CLEAN_TIME ${maintenanceSettings.cleanTime}`);
+            await this.sendSerialCommand(`BACK_WASH_TIME ${maintenanceSettings.backWashTime}`);
+
+            // 3. Send pattern configuration
+            // Send horizontal and vertical travel distances
+            await this.sendSerialCommand(
+              `SET_HORIZONTAL_TRAVEL ${patternConfig.travelDistance.horizontal.x.toFixed(2)} ${
+                patternConfig.travelDistance.horizontal.y.toFixed(2)
+              }`
+            );
+            await this.sendSerialCommand(
+              `SET_VERTICAL_TRAVEL ${patternConfig.travelDistance.vertical.x.toFixed(2)} ${
+                patternConfig.travelDistance.vertical.y.toFixed(2)
+              }`
+            );
+
+            // Send lip travel distance
+            await this.sendSerialCommand(
+              `SET_LIP_TRAVEL ${patternConfig.travelDistance.lip.x.toFixed(2)} ${
+                patternConfig.travelDistance.lip.y.toFixed(2)
+              }`
+            );
+
+            // Send grid configuration
+            await this.sendSerialCommand(
+              `SET_GRID ${patternConfig.rows.x} ${patternConfig.rows.y}`
+            );
+
+            // Send offsets for each side
+            await this.sendSerialCommand(
+              `SET_OFFSET FRONT ${patternConfig.initialOffsets.front.x.toFixed(2)} ${
+                patternConfig.initialOffsets.front.y.toFixed(2)
+              } ${patternConfig.initialOffsets.front.angle.toFixed(2)}`
+            );
+            await this.sendSerialCommand(
+              `SET_OFFSET RIGHT ${patternConfig.initialOffsets.right.x.toFixed(2)} ${
+                patternConfig.initialOffsets.right.y.toFixed(2)
+              } ${patternConfig.initialOffsets.right.angle.toFixed(2)}`
+            );
+            await this.sendSerialCommand(
+              `SET_OFFSET BACK ${patternConfig.initialOffsets.back.x.toFixed(2)} ${
+                patternConfig.initialOffsets.back.y.toFixed(2)
+              } ${patternConfig.initialOffsets.back.angle.toFixed(2)}`
+            );
+            await this.sendSerialCommand(
+              `SET_OFFSET LEFT ${patternConfig.initialOffsets.left.x.toFixed(2)} ${
+                patternConfig.initialOffsets.left.y.toFixed(2)
+              } ${patternConfig.initialOffsets.left.angle.toFixed(2)}`
+            );
+            await this.sendSerialCommand(
+              `SET_OFFSET LIP ${patternConfig.initialOffsets.lip.x.toFixed(2)} ${
+                patternConfig.initialOffsets.lip.y.toFixed(2)
+              } ${patternConfig.initialOffsets.lip.angle.toFixed(2)}`
+            );
+            
+            // Send updated settings to all clients
+            this.broadcastToAll({
+              type: "SETTINGS_UPDATE",
+              payload: {
+                pattern: patternConfig,
+                maintenance: maintenanceSettings,
+                speeds: speeds,
+              },
+            });
+
+            console.log(chalk.green(`✓ Configuration "${command.payload.name}" applied successfully`));
+          } catch (error) {
+            this.sendErrorToClient(
+              ws,
+              error instanceof Error ? error.message : "Failed to load configuration"
+            );
+          }
+          break;
+
+        case "GET_CONFIGS":
+          try {
+            const settings = SettingsManager.getInstance();
+            const configs = await settings.listConfigs();
+            ws.send(JSON.stringify({
+              type: "CONFIGS_UPDATE",
+              payload: configs
+            }));
+          } catch (error) {
+            this.sendErrorToClient(
+              ws,
+              error instanceof Error ? error.message : "Failed to get configurations"
             );
           }
           break;
