@@ -17,6 +17,7 @@ const DEFAULT_SETTINGS: SystemSettings = {
     primeTime: 5,
     cleanTime: 10,
     backWashTime: 15,
+    pressurePotDelay: 5,
   },
   serial: {
     baudRate: 115200,

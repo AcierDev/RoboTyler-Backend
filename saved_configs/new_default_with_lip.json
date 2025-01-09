@@ -1,0 +1,82 @@
+{
+  "name": "New default with lip",
+  "description": "",
+  "timestamp": "2025-01-07T00:19:21.243Z",
+  "settings": {
+    "speeds": {
+      "front": 30,
+      "right": 70,
+      "back": 100,
+      "left": 70,
+      "lip": 37
+    },
+    "maintenance": {
+      "lastMaintenanceDate": "2024-12-04",
+      "maintenanceInterval": 30,
+      "primeTime": 20,
+      "cleanTime": 5,
+      "backWashTime": 15
+    },
+    "serial": {
+      "baudRate": 115200,
+      "vendorIds": [
+        "2341",
+        "1a86"
+      ]
+    },
+    "pattern": {
+      "travelDistance": {
+        "horizontal": {
+          "x": 56,
+          "y": 4.75
+        },
+        "vertical": {
+          "x": 32,
+          "y": 4.75
+        },
+        "lip": {
+          "x": 4.75,
+          "y": 28
+        }
+      },
+      "rows": {
+        "x": 5,
+        "y": 7
+      },
+      "initialOffsets": {
+        "front": {
+          "x": 1,
+          "y": 0,
+          "angle": 125
+        },
+        "right": {
+          "x": 1,
+          "y": 27,
+          "angle": 145
+        },
+        "back": {
+          "x": 5,
+          "y": 32.5,
+          "angle": 135
+        },
+        "left": {
+          "x": 1.25,
+          "y": 8.2,
+          "angle": 137
+        },
+        "lip": {
+          "x": 5.5,
+          "y": 4,
+          "angle": 135
+        }
+      },
+      "enabledSides": {
+        "front": true,
+        "right": true,
+        "back": false,
+        "left": true,
+        "lip": true
+      }
+    }
+  }
+}

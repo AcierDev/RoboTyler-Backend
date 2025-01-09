@@ -6,6 +6,7 @@ import chalk from "chalk";
 import { CommandExecutor } from "./CommandExecutor.js";
 import { SettingsManager } from "./SettingsManager.js";
 import { SystemStatus, WebSocketCommand } from "./types.js";
+import { MaintenanceController } from "./MaintenanceController.js";
 
 type PatternEventType =
   | "PATTERN_START"
@@ -84,6 +85,7 @@ class PaintSystemController {
   private readonly MAX_RECONNECT_ATTEMPTS = 5;
   private reconnectTimer: NodeJS.Timeout | null = null;
   private uptimeTimer: NodeJS.Timeout | null = null;
+  private maintenanceController: MaintenanceController | null = null;
 
   private status: SystemState = {
     status: SystemStatus.IDLE,
@@ -119,6 +121,11 @@ class PaintSystemController {
     this.initializeWebSocket();
     this.startUptimeTimer();
 
+    // Initialize maintenance controller
+    if (this.port) {
+      this.maintenanceController = new MaintenanceController(this.port);
+    }
+
     // Load and send initial speeds to the slave
     const settings = SettingsManager.getInstance();
     const speeds = settings.getSpeeds();
@@ -137,6 +144,9 @@ class PaintSystemController {
     await this.sendSerialCommand(`CLEAN_TIME ${maintenanceSettings.cleanTime}`);
     await this.sendSerialCommand(
       `BACK_WASH_TIME ${maintenanceSettings.backWashTime}`
+    );
+    await this.sendSerialCommand(
+      `PRESSURE_POT_DELAY ${maintenanceSettings.pressurePotDelay ?? 5}`
     );
 
     // Send horizontal travel distance
@@ -728,14 +738,44 @@ class PaintSystemController {
         case "START_PAINTING":
           const enabledSides = SettingsManager.getInstance().getPatternSettings().enabledSides;
           if (Object.values(enabledSides).some(enabled => enabled)) {
+            // Get pressure pot delay setting
+            const settings = SettingsManager.getInstance();
+            const pressurePotDelay = settings.getMaintenanceSettings().pressurePotDelay ?? 5;
+            
+            if (!this.maintenanceController) {
+              this.sendErrorToClient(ws, "Maintenance controller not initialized");
+              return;
+            }
+
+            // Check if pressure pot is active
+            if (!this.maintenanceController.isPressurePotActive()) {
+              // Instead of rejecting, activate pressure pot and queue command
+              this.maintenanceController.togglePressurePot();
+              this.maintenanceController.queueDelayedCommand(command);
+              this.sendErrorToClient(ws, `Activating pressure pot, command will execute in ${pressurePotDelay} seconds`);
+              return;
+            }
+            // Get pressure pot activation time
+            else if (this.maintenanceController.getPressurePotActiveTime() < pressurePotDelay * 1000) {
+              // If pot is active but not for the required time, queue the command
+              this.maintenanceController.queueDelayedCommand(command);
+              this.sendErrorToClient(ws, "Waiting for pressure pot, command will execute shortly");
+              return;
+            }
             await this.sendSerialCommand("START");
           } else {
             this.sendErrorToClient(ws, "No sides are enabled for painting");
           }
           break;
+
         case "STOP_PAINTING":
           await this.sendSerialCommand("STOP");
           break;
+
+        case "PAUSE_PAINTING":
+          await this.sendSerialCommand("PAUSE");
+          break;
+
         case "HOME_SYSTEM":
           await this.sendSerialCommand("HOME");
           this.updateStatus({
@@ -769,39 +809,19 @@ class PaintSystemController {
 
         // Single side painting commands
         case "PAINT_FRONT":
-          if (SettingsManager.getInstance().getPatternSettings().enabledSides.front) {
-            await this.sendSerialCommand("FRONT");
-          } else {
-            this.sendErrorToClient(ws, "Front side is disabled");
-          }
+          await this.sendSerialCommand("FRONT");
           break;
         case "PAINT_RIGHT":
-          if (SettingsManager.getInstance().getPatternSettings().enabledSides.right) {
-            await this.sendSerialCommand("RIGHT");
-          } else {
-            this.sendErrorToClient(ws, "Right side is disabled");
-          }
+          await this.sendSerialCommand("RIGHT");
           break;
         case "PAINT_BACK":
-          if (SettingsManager.getInstance().getPatternSettings().enabledSides.back) {
-            await this.sendSerialCommand("BACK");
-          } else {
-            this.sendErrorToClient(ws, "Back side is disabled");
-          }
+          await this.sendSerialCommand("BACK");
           break;
         case "PAINT_LEFT":
-          if (SettingsManager.getInstance().getPatternSettings().enabledSides.left) {
-            await this.sendSerialCommand("LEFT");
-          } else {
-            this.sendErrorToClient(ws, "Left side is disabled");
-          }
+          await this.sendSerialCommand("LEFT");
           break;
         case "PAINT_LIP":
-          if (SettingsManager.getInstance().getPatternSettings().enabledSides.lip) {
-            await this.sendSerialCommand("LIP");
-          } else {
-            this.sendErrorToClient(ws, "Lip pattern is disabled");
-          }
+          await this.sendSerialCommand("LIP");
           break;
         case "ROTATE_SPINNER":
           if (!command.payload?.direction || !command.payload?.degrees) {

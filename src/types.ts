@@ -29,6 +29,7 @@ export interface SystemSettings {
     primeTime: number;
     cleanTime: number;
     backWashTime: number;
+    pressurePotDelay: number;
   };
   serial: {
     baudRate: number;
@@ -103,4 +104,13 @@ export interface WebSocketCommand {
   payload?: {
     [key: string]: any;  // Could be more specific based on command types
   };
+}
+
+export interface MaintenanceSettings {
+  lastMaintenanceDate: string;
+  maintenanceInterval: number;
+  primeTime: number;
+  cleanTime: number;
+  backWashTime: number;
+  pressurePotDelay: number;
 }
