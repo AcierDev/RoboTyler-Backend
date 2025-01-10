@@ -18,6 +18,10 @@ const DEFAULT_SETTINGS: SystemSettings = {
     cleanTime: 10,
     backWashTime: 15,
     pressurePotDelay: 5,
+    positions: {
+      prime: { x: 0, y: 15, angle: 135 },
+      clean: { x: 0, y: 20, angle: 135 },
+    }
   },
   serial: {
     baudRate: 115200,

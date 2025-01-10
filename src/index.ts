@@ -6,7 +6,6 @@ import chalk from "chalk";
 import { CommandExecutor } from "./CommandExecutor.js";
 import { SettingsManager } from "./SettingsManager.js";
 import { SystemStatus, WebSocketCommand } from "./types.js";
-import { MaintenanceController } from "./MaintenanceController.js";
 
 type PatternEventType =
   | "PATTERN_START"
@@ -85,7 +84,6 @@ class PaintSystemController {
   private readonly MAX_RECONNECT_ATTEMPTS = 5;
   private reconnectTimer: NodeJS.Timeout | null = null;
   private uptimeTimer: NodeJS.Timeout | null = null;
-  private maintenanceController: MaintenanceController | null = null;
 
   private status: SystemState = {
     status: SystemStatus.IDLE,
@@ -121,10 +119,6 @@ class PaintSystemController {
     this.initializeWebSocket();
     this.startUptimeTimer();
 
-    // Initialize maintenance controller
-    if (this.port) {
-      this.maintenanceController = new MaintenanceController(this.port);
-    }
 
     // Load and send initial speeds to the slave
     const settings = SettingsManager.getInstance();
@@ -209,6 +203,9 @@ class PaintSystemController {
         patternConfig.travelDistance.lip.y.toFixed(2)
       }`
     );
+
+    await this.sendSerialCommand(`SET_PRIME_POS,${maintenanceSettings.positions.prime.x.toFixed(2)},${maintenanceSettings.positions.prime.y.toFixed(2)},${maintenanceSettings.positions.prime.angle}`);
+    await this.sendSerialCommand(`SET_CLEAN_POS,${maintenanceSettings.positions.clean.x.toFixed(2)},${maintenanceSettings.positions.clean.y.toFixed(2)},${maintenanceSettings.positions.clean.angle}`);
   }
 
   private async initializeSerial(): Promise<void> {
@@ -742,26 +739,7 @@ class PaintSystemController {
             const settings = SettingsManager.getInstance();
             const pressurePotDelay = settings.getMaintenanceSettings().pressurePotDelay ?? 5;
             
-            if (!this.maintenanceController) {
-              this.sendErrorToClient(ws, "Maintenance controller not initialized");
-              return;
-            }
-
-            // Check if pressure pot is active
-            if (!this.maintenanceController.isPressurePotActive()) {
-              // Instead of rejecting, activate pressure pot and queue command
-              this.maintenanceController.togglePressurePot();
-              this.maintenanceController.queueDelayedCommand(command);
-              this.sendErrorToClient(ws, `Activating pressure pot, command will execute in ${pressurePotDelay} seconds`);
-              return;
-            }
-            // Get pressure pot activation time
-            else if (this.maintenanceController.getPressurePotActiveTime() < pressurePotDelay * 1000) {
-              // If pot is active but not for the required time, queue the command
-              this.maintenanceController.queueDelayedCommand(command);
-              this.sendErrorToClient(ws, "Waiting for pressure pot, command will execute shortly");
-              return;
-            }
+            
             await this.sendSerialCommand("START");
           } else {
             this.sendErrorToClient(ws, "No sides are enabled for painting");
@@ -1041,6 +1019,8 @@ class PaintSystemController {
         case "UPDATE_SETTINGS":
           if (command.payload) {
             const settings = SettingsManager.getInstance();
+            const maintenanceSettings = settings.getMaintenanceSettings();
+
 
             // Update the settings based on the payload
             if (command.payload.pattern) {
@@ -1048,12 +1028,14 @@ class PaintSystemController {
               await settings.updatePatternSettings(command.payload.pattern);
             }
             if (command.payload.maintenance) {
+              console.log(JSON.stringify(command.payload.maintenance));
               await settings.updateMaintenanceSettings(
-                command.payload.maintenance
+                {
+                  ...command.payload.maintenance
+                }
               );
 
               // Send updated maintenance settings to ESP32
-              const maintenanceSettings = settings.getMaintenanceSettings();
               await this.sendSerialCommand(
                 `PRIME_TIME ${maintenanceSettings.primeTime}`
               );
@@ -1063,6 +1045,21 @@ class PaintSystemController {
               await this.sendSerialCommand(
                 `BACK_WASH_TIME ${maintenanceSettings.backWashTime}`
               );
+              await this.sendSerialCommand(
+                `PRESSURE_POT_DELAY ${maintenanceSettings.pressurePotDelay}`
+              );
+
+              // Send maintenance positions
+              if (maintenanceSettings.positions) {
+                const { prime, clean } = maintenanceSettings.positions;
+                console.log(maintenanceSettings.positions);
+                await this.sendSerialCommand(
+                  `SET_PRIME_POS,${prime.x.toFixed(2)},${prime.y.toFixed(2)},${prime.angle}`
+                );
+                await this.sendSerialCommand(
+                  `SET_CLEAN_POS,${clean.x.toFixed(2)},${clean.y.toFixed(2)},${clean.angle}`
+                );
+              }
             }
             if (command.payload.speeds) {
               await settings.updateSpeeds(command.payload.speeds);
@@ -1343,7 +1340,7 @@ class PaintSystemController {
             await this.sendSerialCommand(`PRIME_TIME ${maintenanceSettings.primeTime}`);
             await this.sendSerialCommand(`CLEAN_TIME ${maintenanceSettings.cleanTime}`);
             await this.sendSerialCommand(`BACK_WASH_TIME ${maintenanceSettings.backWashTime}`);
-
+            await this.sendSerialCommand(`PRESSURE_POT_DELAY ${maintenanceSettings.pressurePotDelay}`);
             // 3. Send pattern configuration
             // Send horizontal and vertical travel distances
             await this.sendSerialCommand(

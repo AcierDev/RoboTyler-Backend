@@ -30,6 +30,10 @@ export interface SystemSettings {
     cleanTime: number;
     backWashTime: number;
     pressurePotDelay: number;
+    positions: {
+      prime: { x: number; y: number; angle: number };
+      clean: { x: number; y: number; angle: number };
+    };
   };
   serial: {
     baudRate: number;
@@ -113,4 +117,8 @@ export interface MaintenanceSettings {
   cleanTime: number;
   backWashTime: number;
   pressurePotDelay: number;
+  positions: {
+    prime: { x: number; y: number; angle: number };
+    clean: { x: number; y: number; angle: number };
+  };
 }
